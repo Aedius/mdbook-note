@@ -1,0 +1,323 @@
+use mdbook::book::{Book, Chapter, SectionNumber};
+use mdbook::errors::Error;
+use mdbook::preprocess::{Preprocessor, PreprocessorContext};
+use mdbook::BookItem;
+use regex::{Regex, Captures, RegexBuilder};
+use std::collections::HashMap;
+
+pub struct Note {
+    regex: Regex,
+}
+
+#[derive(Eq, PartialEq, Debug, Clone)]
+struct Extract {
+    key: Vec<String>,
+    val: String,
+}
+
+struct Extracts {
+    name: String,
+    list: Vec<Extract>,
+}
+
+impl Note {
+    pub fn new() -> Note {
+        let re = RegexBuilder::new(r"\{\{#note ?(?P<key>[0-9a-zA-Z|_ ]*)}}(?P<val>[^\{]*)\{\{#note end}}")
+            .multi_line(true)
+            .dot_matches_new_line(true)
+            .build()
+            .unwrap();
+
+        Note {
+            regex: re
+        }
+    }
+
+    fn parse_chapter(&self, chapter: &Chapter) -> Vec<Extract> {
+        let mut res = vec![];
+
+        for cap in self.regex.captures_iter(chapter.content.as_str()) {
+            let mut keys: Vec<String> = capture(&cap, "key").split("|").into_iter().map(|s| s.trim().to_string()).filter(|s| s != &"".to_string()).collect();
+            keys.reverse();
+            res.push(Extract {
+                key: keys,
+                val: capture(&cap, "val"),
+            })
+        }
+
+        res
+    }
+}
+
+fn capture(cap: &Captures, k: &str) -> String {
+    match cap.name(k) {
+        Some(res) => {
+            res.as_str().trim().to_string()
+        }
+        None => {
+            "".to_string()
+        }
+    }
+}
+
+#[cfg(test)]
+mod extract_tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_inline() {
+        let chapter = Chapter {
+            name: "some name".to_string(),
+            content: "some outer content {{#note my_key}}inside contente{{#note end}} other outer content".to_string(),
+            number: None,
+            sub_items: vec![],
+            path: None,
+            source_path: None,
+            parent_names: vec![],
+        };
+
+        let note = Note::new();
+
+        assert_eq!(note.parse_chapter(&chapter), vec![Extract {
+            key: vec!["my_key".to_string()],
+            val: "inside contente".to_string(),
+        }])
+    }
+
+    #[test]
+    fn test_extract_multiline() {
+        let chapter = Chapter {
+            name: "some name".to_string(),
+            content: "some outer content
+            {{#note my_key}}
+            inside contente
+            {{#note end}}
+            other outer content".to_string(),
+            number: None,
+            sub_items: vec![],
+            path: None,
+            source_path: None,
+            parent_names: vec![],
+        };
+
+        let note = Note::new();
+
+        assert_eq!(note.parse_chapter(&chapter), vec![Extract {
+            key: vec!["my_key".to_string()],
+            val: "inside contente".to_string(),
+        }])
+    }
+
+    #[test]
+    fn test_extract_multiline_multicapture() {
+        let chapter = Chapter {
+            name: "some name".to_string(),
+            content: "some outer content
+{{#note my_key| my sub key}}
+inside contente split
+{{#note end}}
+other outer content
+blablabla
+{{#note my key 2}}
+other content
+split
+{{#note end}}
+{{#note}}
+some global note
+{{#note end}}
+end
+".to_string(),
+            number: None,
+            sub_items: vec![],
+            path: None,
+            source_path: None,
+            parent_names: vec![],
+        };
+
+        let note = Note::new();
+
+        assert_eq!(note.parse_chapter(&chapter), vec![Extract {
+            key: vec!["my sub key".to_string(), "my_key".to_string()],
+            val: "inside contente split".to_string(),
+        }, Extract {
+            key: vec!["my key 2".to_string()],
+            val: "other content\nsplit".to_string(),
+        }, Extract {
+            key: vec![],
+            val: "some global note".to_string(),
+        }])
+    }
+}
+
+impl Preprocessor for Note {
+    fn name(&self) -> &str {
+        "note"
+    }
+
+    fn run(&self, ctx: &PreprocessorContext, book: Book) -> Result<Book, Error> {
+        let mut name = "note".to_string();
+
+        // In testing we want to tell the preprocessor to blow up by setting a
+        // particular config value
+        if let Some(nop_cfg) = ctx.config.get_preprocessor(self.name()) {
+            match nop_cfg.get("name") {
+                None => {}
+                Some(value) => {
+                    name = value.as_str().unwrap().to_string();
+                }
+            }
+        }
+
+        let mut extracts: Vec<Extract> = vec![];
+
+        for item in book.iter() {
+            match item {
+                BookItem::Chapter(chapter) => {
+                    let mut ext = self.parse_chapter(chapter);
+                    extracts.append(&mut ext)
+                }
+                BookItem::Separator => {}
+                BookItem::PartTitle(_) => {}
+            }
+        }
+
+        if extracts.len() == 0 {
+            return Ok(book);
+        }
+
+
+        let note_chapter = generate_chapter(extracts, name, vec![], vec![99]);
+
+        let mut new_book = book.clone();
+
+        new_book.push_item(note_chapter);
+
+        // we *are* a no-op preprocessor after all
+        Ok(new_book)
+    }
+
+    fn supports_renderer(&self, renderer: &str) -> bool {
+        renderer != "not-supported"
+    }
+}
+
+fn generate_chapter(extracts: Vec<Extract>, name: String, parent: Vec<String>, section: Vec<u32>) -> Chapter {
+    let mut extract_by_key = HashMap::new();
+
+    let mut chapter = Chapter {
+        name: name.clone(),
+        content: "".to_string(),
+        number: Some(SectionNumber(section.clone())),
+        sub_items: vec![],
+        path: Some(name.parse().unwrap()),
+        source_path: None,
+        parent_names: parent.clone(),
+    };
+
+    let mut parent = parent;
+    parent.push(name.clone());
+
+    for extract in extracts {
+        let mut local = extract.clone();
+
+        match local.key.pop() {
+            None => {
+                if chapter.content.len() > 0 {
+                    chapter.content = format!("{}\n\n{}", chapter.content, extract.val);
+                }else{
+                    chapter.content =  extract.val;
+                }
+            }
+            Some(k) => {
+                let val = extract_by_key.entry(k).or_insert(vec![]);
+                val.push(local);
+            }
+        }
+    }
+
+    let mut extract_to_sort = vec![];
+    for (name, list) in extract_by_key.into_iter() {
+        let extract = Extracts{ name, list };
+        extract_to_sort.push(extract);
+    }
+
+    extract_to_sort.sort_by(|a, b| a.name.cmp(&b.name));
+
+
+    let mut i = 1;
+    for extract in extract_to_sort {
+
+        let mut section = section.clone();
+        section.push(i);
+
+        let new_chapter = generate_chapter(extract.list, extract.name, parent.clone(), section);
+
+        chapter.sub_items.push(BookItem::Chapter(new_chapter));
+
+        i = i+1;
+    }
+
+    return chapter;
+}
+
+#[cfg(test)]
+mod generate_tests {
+    use mdbook::book::SectionNumber;
+    use super::*;
+
+    #[test]
+    fn test_generate_chapter() {
+        let extracts = vec![
+            Extract { key: vec!["b".to_string()], val: "content b".to_string() },
+            Extract { key: vec!["a1".to_string(), "a".to_string()], val: "content a1".to_string() },
+            Extract { key: vec![], val: "note".to_string() },
+            Extract { key: vec!["a2".to_string(), "a".to_string()], val: "content a2".to_string() },
+            Extract { key: vec!["a2".to_string(), "a".to_string()], val: "content a2 2".to_string() },
+        ];
+
+        let chapter = Chapter {
+            name: "note".to_string(),
+            content: "note".to_string(),
+            number: Some(SectionNumber(vec![1])),
+            sub_items: vec![BookItem::Chapter(Chapter{
+                name: "a".to_string(),
+                content: "".to_string(),
+                number: Some(SectionNumber(vec![1,1])),
+                sub_items: vec![BookItem::Chapter(Chapter{
+                    name: "a1".to_string(),
+                    content: "content a1".to_string(),
+                    number: Some(SectionNumber(vec![1,1,1])),
+                    sub_items: vec![],
+                    path: Some("a1".parse().unwrap()),
+                    source_path: None,
+                    parent_names: vec!["note".to_string(),"a".to_string()]
+                }),BookItem::Chapter(Chapter{
+                    name: "a2".to_string(),
+                    content: "content a2\n\ncontent a2 2".to_string(),
+                    number: Some(SectionNumber(vec![1,1,2])),
+                    sub_items: vec![],
+                    path: Some("a2".parse().unwrap()),
+                    source_path: None,
+                    parent_names: vec!["note".to_string(),"a".to_string()]
+                })],
+                path: Some("a".parse().unwrap()),
+                source_path: None,
+                parent_names: vec!["note".to_string()]
+            }),
+            BookItem::Chapter(Chapter{
+                name: "b".to_string(),
+                content: "content b".to_string(),
+                number: Some(SectionNumber(vec![1,2])),
+                sub_items: vec![],
+                path: Some("b".parse().unwrap()),
+                source_path: None,
+                parent_names: vec!["note".to_string()]
+            })],
+            path: Some("note".parse().unwrap()),
+            source_path: None,
+            parent_names: vec![],
+        };
+
+        assert_eq!(generate_chapter(extracts, "note".to_string(), vec![], vec![1]), chapter)
+    }
+}
