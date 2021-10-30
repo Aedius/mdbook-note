@@ -223,7 +223,6 @@ impl Preprocessor for Note {
             return Ok(book);
         }
 
-        new_book.push_item(BookItem::PartTitle(name.to_string()));
         let note_chapter = generate_chapter(extracts, name, vec![], vec![99]);
 
         new_book.push_item(note_chapter);
@@ -245,9 +244,12 @@ fn generate_chapter(
 ) -> Chapter {
     let mut extract_by_key = HashMap::new();
 
+    let mut current_name = parent.clone();
+    current_name.push(name.clone());
+
     let mut chapter = Chapter {
         name: name.clone(),
-        content: "".to_string(),
+        content: format!("## {}", current_name.join(" / ")),
         number: Some(SectionNumber(section.clone())),
         sub_items: vec![],
         path: Some(name.parse().unwrap()),
@@ -317,7 +319,7 @@ mod generate_tests {
             },
             Extract {
                 key: vec![],
-                val: "note".to_string(),
+                val: "note content".to_string(),
             },
             Extract {
                 key: vec!["a2".to_string(), "a".to_string()],
@@ -331,17 +333,17 @@ mod generate_tests {
 
         let chapter = Chapter {
             name: "note".to_string(),
-            content: "note".to_string(),
+            content: "## note\n\nnote content".to_string(),
             number: Some(SectionNumber(vec![1])),
             sub_items: vec![
                 BookItem::Chapter(Chapter {
                     name: "a".to_string(),
-                    content: "".to_string(),
+                    content: "## note / a".to_string(),
                     number: Some(SectionNumber(vec![1, 1])),
                     sub_items: vec![
                         BookItem::Chapter(Chapter {
                             name: "a1".to_string(),
-                            content: "content a1".to_string(),
+                            content: "## note / a / a1\n\ncontent a1".to_string(),
                             number: Some(SectionNumber(vec![1, 1, 1])),
                             sub_items: vec![],
                             path: Some("a1".parse().unwrap()),
@@ -350,7 +352,7 @@ mod generate_tests {
                         }),
                         BookItem::Chapter(Chapter {
                             name: "a2".to_string(),
-                            content: "content a2\n\ncontent a2 2".to_string(),
+                            content: "## note / a / a2\n\ncontent a2\n\ncontent a2 2".to_string(),
                             number: Some(SectionNumber(vec![1, 1, 2])),
                             sub_items: vec![],
                             path: Some("a2".parse().unwrap()),
@@ -364,7 +366,7 @@ mod generate_tests {
                 }),
                 BookItem::Chapter(Chapter {
                     name: "b".to_string(),
-                    content: "content b".to_string(),
+                    content: "## note / b\n\ncontent b".to_string(),
                     number: Some(SectionNumber(vec![1, 2])),
                     sub_items: vec![],
                     path: Some("b".parse().unwrap()),
