@@ -143,6 +143,9 @@ split
 {{#note}}
 some global note
 {{#note end}}
+{{#note my key 2}}
+my other key 2
+{{#note end}}
 end
 "
             .to_string(),
@@ -169,7 +172,11 @@ end
                 Extract {
                     key: vec![],
                     val: "some global note".to_string(),
-                }
+                },
+                Extract {
+                    key: vec!["my key 2".to_string()],
+                    val: "my other key 2".to_string(),
+                },
             ]
         )
     }
@@ -216,6 +223,7 @@ impl Preprocessor for Note {
             return Ok(book);
         }
 
+        new_book.push_item(BookItem::PartTitle(name.to_string()));
         let note_chapter = generate_chapter(extracts, name, vec![], vec![99]);
 
         new_book.push_item(note_chapter);
@@ -255,7 +263,7 @@ fn generate_chapter(
 
         match local.key.pop() {
             None => {
-                if chapter.content.is_empty() {
+                if !chapter.content.is_empty() {
                     chapter.content = format!("{}\n\n{}", chapter.content, extract.val);
                 } else {
                     chapter.content = extract.val;
