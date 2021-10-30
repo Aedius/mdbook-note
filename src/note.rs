@@ -23,7 +23,7 @@ struct Extracts {
 impl Note {
     pub fn new() -> Note {
         let re = RegexBuilder::new(
-            r"\{\{#note ?(?P<key>[0-9a-zA-Z|_ ]*)}}(?P<val>[^\{]*)\{\{#note end}}",
+            r"\{\{#note ?(?P<key>[^}]*)}}(?P<val>[^\{]*)\{\{#note end}}",
         )
         .multi_line(true)
         .dot_matches_new_line(true)
