@@ -52,6 +52,16 @@ impl Note {
 
         res
     }
+
+    fn clean_chapter(&self, mut chapter: Chapter) -> Chapter {
+        let content = chapter.content.clone();
+
+        let new_content = self.regex.replace_all(&content, "$val");
+
+        chapter.content = new_content.to_string();
+
+        chapter
+    }
 }
 
 fn capture(cap: &Captures, k: &str) -> String {
@@ -186,15 +196,20 @@ impl Preprocessor for Note {
 
         let mut extracts: Vec<Extract> = vec![];
 
+        let mut new_book = Book::new();
+
         for item in book.iter() {
-            match item {
+            let new_item = match item {
                 BookItem::Chapter(chapter) => {
                     let mut ext = self.parse_chapter(chapter);
-                    extracts.append(&mut ext)
+                    extracts.append(&mut ext);
+                    let clean = self.clean_chapter(chapter.clone());
+                    BookItem::Chapter(clean)
                 }
-                BookItem::Separator => {}
-                BookItem::PartTitle(_) => {}
-            }
+                BookItem::Separator => BookItem::Separator,
+                BookItem::PartTitle(title) => BookItem::PartTitle(title.to_string()),
+            };
+            new_book.push_item(new_item);
         }
 
         if extracts.is_empty() {
@@ -202,8 +217,6 @@ impl Preprocessor for Note {
         }
 
         let note_chapter = generate_chapter(extracts, name, vec![], vec![99]);
-
-        let mut new_book = book;
 
         new_book.push_item(note_chapter);
 
