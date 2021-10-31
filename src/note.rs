@@ -41,26 +41,31 @@ impl Note {
         for cap in self.regex.captures_iter(chapter.content.as_str()) {
             let key = capture(&cap, "key");
 
-            let mut keys: Vec<String> = key
-                .clone()
-                .split('|')
-                .into_iter()
-                .map(|s| s.trim().to_string())
-                .filter(|s| s != &"".to_string())
-                .collect();
-            keys.reverse();
+            for  key in key.clone().split("||").into_iter(){
 
-            if !find_key.contains_key(&*key) {
+                let mut keys: Vec<String> = key
+                    .split('|')
+                    .into_iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| s != &"".to_string())
+                    .collect();
+                keys.reverse();
+
+                if !find_key.contains_key(&*key) {
+                    res.push(Extract {
+                        key: keys.clone(),
+                        val: format!("### {}", chapter.name),
+                    });
+                    find_key.insert(key.to_string(), true);
+                }
                 res.push(Extract {
-                    key: keys.clone(),
-                    val: format!("### {}", chapter.name),
-                });
-                find_key.insert(key, true);
+                    key: keys,
+                    val: capture(&cap, "val"),
+                })
+
             }
-            res.push(Extract {
-                key: keys,
-                val: capture(&cap, "val"),
-            })
+
+
         }
 
         res
@@ -156,7 +161,7 @@ mod extract_tests {
         let chapter = Chapter {
             name: "some name".to_string(),
             content: "some outer content
-{{#note my_key| my sub key}}
+{{#note ||my_key| my sub key}}
 inside contente split
 {{#note end}}
 other outer content
@@ -187,6 +192,14 @@ end
             note.parse_chapter(&chapter),
             vec![
                 Extract {
+                    key: vec![],
+                    val: "### some name".to_string(),
+                },
+                Extract {
+                    key: vec![],
+                    val: "inside contente split".to_string(),
+                },
+                Extract {
                     key: vec!["my sub key".to_string(), "my_key".to_string()],
                     val: "### some name".to_string(),
                 },
@@ -201,10 +214,6 @@ end
                 Extract {
                     key: vec!["my key 2".to_string()],
                     val: "other content\nsplit".to_string(),
-                },
-                Extract {
-                    key: vec![],
-                    val: "### some name".to_string(),
                 },
                 Extract {
                     key: vec![],
