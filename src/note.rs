@@ -22,13 +22,11 @@ struct Extracts {
 
 impl Note {
     pub fn new() -> Note {
-        let re = RegexBuilder::new(
-            r"\{\{#note ?(?P<key>[^}]*)}}(?P<val>[^\{]*)\{\{#note end}}",
-        )
-        .multi_line(true)
-        .dot_matches_new_line(true)
-        .build()
-        .unwrap();
+        let re = RegexBuilder::new(r"\{\{#note ?(?P<key>[^}]*)}}(?P<val>[^\{]*)\{\{#note end}}")
+            .multi_line(true)
+            .dot_matches_new_line(true)
+            .build()
+            .unwrap();
 
         Note { regex: re }
     }
@@ -41,8 +39,7 @@ impl Note {
         for cap in self.regex.captures_iter(chapter.content.as_str()) {
             let key = capture(&cap, "key");
 
-            for  key in key.clone().split("||").into_iter(){
-
+            for key in key.clone().split("||").into_iter() {
                 let mut keys: Vec<String> = key
                     .split('|')
                     .into_iter()
@@ -62,10 +59,7 @@ impl Note {
                     key: keys,
                     val: capture(&cap, "val"),
                 })
-
             }
-
-
         }
 
         res
@@ -117,7 +111,7 @@ mod extract_tests {
                 Extract {
                     key: vec!["my_key".to_string()],
                     val: "inside contente".to_string(),
-                }
+                },
             ]
         )
     }
@@ -151,7 +145,7 @@ mod extract_tests {
                 Extract {
                     key: vec!["my_key".to_string()],
                     val: "inside contente".to_string(),
-                }
+                },
             ]
         )
     }
@@ -234,15 +228,23 @@ impl Preprocessor for Note {
     }
 
     fn run(&self, ctx: &PreprocessorContext, book: Book) -> Result<Book, Error> {
+        let mut cleanup_only = false;
         let mut name = "note".to_string();
 
         // In testing we want to tell the preprocessor to blow up by setting a
         // particular config value
         if let Some(nop_cfg) = ctx.config.get_preprocessor(self.name()) {
+
             match nop_cfg.get("name") {
                 None => {}
                 Some(value) => {
                     name = value.as_str().unwrap().to_string();
+                }
+            }
+            match nop_cfg.get("cleanup_only") {
+                None => {}
+                Some(value) => {
+                    cleanup_only = value.as_bool().unwrap();
                 }
             }
         }
@@ -254,8 +256,10 @@ impl Preprocessor for Note {
         for item in book.iter() {
             let new_item = match item {
                 BookItem::Chapter(chapter) => {
-                    let mut ext = self.parse_chapter(chapter);
-                    extracts.append(&mut ext);
+                    if !cleanup_only {
+                        let mut ext = self.parse_chapter(chapter);
+                        extracts.append(&mut ext);
+                    }
                     let clean = self.clean_chapter(chapter.clone());
                     BookItem::Chapter(clean)
                 }
@@ -266,7 +270,7 @@ impl Preprocessor for Note {
         }
 
         if extracts.is_empty() {
-            return Ok(book);
+            return Ok(new_book);
         }
 
         let note_chapter = generate_chapter(extracts, name, vec![], vec![99]);

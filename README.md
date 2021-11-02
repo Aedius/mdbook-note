@@ -2,7 +2,7 @@
 
 to install :
 
-`cargo.exe install --color=always --path .`
+`cargo install --color=always --path .`
 
 then to use, in book.toml : 
 
@@ -10,4 +10,5 @@ then to use, in book.toml :
 [preprocessor.note]
 renderers = ["html"]
 name = "notes"
+cleanup_only = false
 ```
