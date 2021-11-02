@@ -302,7 +302,7 @@ fn generate_chapter(
         content: format!("## {}", current_name.join(" / ")),
         number: Some(SectionNumber(section.clone())),
         sub_items: vec![],
-        path: Some(name.parse().unwrap()),
+        path: Some(current_name.join("/").parse().unwrap()),
         source_path: None,
         parent_names: parent.clone(),
     };
